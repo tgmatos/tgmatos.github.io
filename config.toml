@@ -1,4 +1,4 @@
-# The URL the site will be built for
+# The URL the site will be built forf
 base_url = "https://tgmatos.github.io"
 
 # Whether to automatically compile all Sass files in the sass directory
