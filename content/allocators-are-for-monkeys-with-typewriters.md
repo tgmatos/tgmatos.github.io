@@ -1,6 +1,9 @@
 +++
 title = "Allocators are Monkeys With Typewriters"
-thumbnail = "static/images/monkey.png"
+description = "Or How easy it is to implement an allocator"
+date = 2025-06-19
+[extra]
+thumbnail = "/static/images/monkey.png"
 +++
 {{ resize_image(path="./images/monkey.png", width=600, height=200, op="fit_width") }}
 ---
