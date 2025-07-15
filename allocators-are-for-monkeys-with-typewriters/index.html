@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta content="IE=edge" http-equiv="X-UA-Compatible"/>
+        <meta content="text/html; charset=UTF-8" http-equiv="content-type"/>
+        <meta content="width=device-width, initial-scale=1" name="viewport"/>
+
+        
+        
+        
+
+        
+
+        
+        
+        
+
+        
+        
+        
+
+        
+        
+        
+
+        <title>Allocators are Monkeys With Typewriters</title>
+        
+        <meta name="title" content="Allocators are Monkeys With Typewriters">
+        
+        <meta name="description" content="Or How easy it is to implement an allocator">
+        <meta name="generator" content="Zola v0.16.1">
+
+        <meta property="og:type" content="website">
+        <meta property="og:url" content="https://tgmatos.github.io/allocators-are-for-monkeys-with-typewriters/">
+        <meta property="og:site_name" content="">
+        <meta property="og:title" content="Allocators are Monkeys With Typewriters">
+        <meta property="og:description" content="Or How easy it is to implement an allocator">
+        <meta property="og:image" content="https:&#x2F;&#x2F;tgmatos.github.io&#x2F;static&#x2F;images&#x2F;monkey.png">
+
+        
+        
+        <meta property="twitter:card" content="summary_large_image">
+        <meta property="twitter:url" content="https://tgmatos.github.io/allocators-are-for-monkeys-with-typewriters/">
+        <meta property="twitter:title" content="Allocators are Monkeys With Typewriters">
+        <meta property="twitter:description" content="Or How easy it is to implement an allocator">
+        <meta property="twitter:image" content="https:&#x2F;&#x2F;tgmatos.github.io&#x2F;static&#x2F;images&#x2F;monkey.png">
+        
+        
+        <link rel="canonical" href="https://tgmatos.github.io/allocators-are-for-monkeys-with-typewriters/">
+        <script type="application/ld+json">
+            {
+                "description":"Or How easy it is to implement an allocator",
+                "url":"https://tgmatos.github.io/allocators-are-for-monkeys-with-typewriters/",
+                "@type":"WebSite",
+                "headline":"Allocators are Monkeys With Typewriters",
+                "name":"Allocators are Monkeys With Typewriters",
+                
+                "@context":"https://schema.org"
+            }
+        </script>
+        
+        
+        
+        <link rel="stylesheet" href="https://tgmatos.github.io/style.css"/>
+        
+    </head>
+    <body theme="auto">
+        <div class="w">
+            <header>
+                
+                <nav>
+                    
+                    <a href="https://github.com/tgmatos" >Github</a>
+                    
+                    <a href="/" >~home</a>
+                    
+                    <a href="https://www.linkedin.com/in/tiago-matos-314204289/" >Linkedin</a>
+                    
+                </nav>
+                
+                
+<p><a href="..">..</a>/allocators-are-for-monkeys-with-typewriters</p>
+<p class="post-meta"><time datetime="2025-06-19">2025-06-19</time></p>
+<h1>Allocators are Monkeys With Typewriters</h1>
+
+                <div id="theme-toggle" class="theme-toggle">
+                  <span class="slider">
+                    <span class="emoji sun">☀️</span>
+                    <span class="emoji moon">🌙</span>
+                  </span>
+                </div>
+            </header>
+            <main class="page-content" aria-label="Content">
+                
+
+
+
+<h2 id="">
+<img src="https:&#x2F;&#x2F;tgmatos.github.io&#x2F;processed_images&#x2F;monkey.c9ea9ce0ce59ee69.png" />
+</h2>
+<h1 id="table-of-contents">Table of Contents</h1>
+<ol>
+<li><a href="https://tgmatos.github.io/allocators-are-for-monkeys-with-typewriters/#introduction">Introduction</a></li>
+<li><a href="https://tgmatos.github.io/allocators-are-for-monkeys-with-typewriters/#memory-allocators">Memory allocators</a></li>
+<li><a href="https://tgmatos.github.io/allocators-are-for-monkeys-with-typewriters/#buddy-system">Buddy system</a>
+<ol>
+<li><a href="https://tgmatos.github.io/allocators-are-for-monkeys-with-typewriters/#allocation">Allocation</a></li>
+<li><a href="https://tgmatos.github.io/allocators-are-for-monkeys-with-typewriters/#deallocation">Deallocation</a></li>
+</ol>
+</li>
+</ol>
+<h2 id="introduction">Introduction</h2>
+<p>Recently I was looking at an issue on <a href="https://github.com/microsoft/mimalloc/">mimalloc</a>, a "<em>state-of-the-art</em>" memory allocator developed by Microsoft. <a href="https://github.com/microsoft/mimalloc/issues/53#issuecomment-622976237">The issue</a> was quite simple, developers wanted a way to preallocate a piece of memory and use it as mimalloc's heap. Seeing that <em>mimalloc</em> does not offer this feature, I thought:</p>
+<blockquote>
+<p>"<em>how hard can it be to write a memory allocator to manage a preallocated region?</em>".</p>
+</blockquote>
+<p>The answer to this question is:</p>
+<blockquote>
+<p>"<em>given enough time, even a monkey with a typewriter can write a memory allocator</em>".</p>
+</blockquote>
+<p>The implementation is around 163 LoC and very straightforward.</p>
+
+<img src="https:&#x2F;&#x2F;tgmatos.github.io&#x2F;processed_images&#x2F;mimalloc_issue.9f94d875f9e73f88.png" />
+<h2 id="memory-allocators">Memory allocators</h2>
+<p>To write a memory allocator, we first need to understand what an allocator does. An allocator is "<em>a component of a programming language or runtime system that is responsible for managing the allocation and deallocation of memory during program execution</em>".<sup class="footnote-reference"><a href="#1">1</a></sup> Roughly speaking, a custom allocator needs to provide a way for the developer to allocate, deallocate and reallocate memory from the operating system.</p>
+<p>The C standard library provides <code>malloc/free/resize</code> (<em>C11 introduced <a href="https://en.cppreference.com/w/c/memory/aligned_alloc">aligned_alloc</a> and C23 introduced <a href="https://en.cppreference.com/w/c/memory/free_sized">free_sized</a> and <a href="https://en.cppreference.com/w/c/memory/free_aligned_sized">free_aligned_sized</a></em>), then a custom allocator will need to provide the same (<em>or nearly</em>) the same interface for easy integration with already existing code.</p>
+<h2 id="memory-fragmentation">Memory Fragmentation</h2>
+<p>One of the problems an allocator tries to solve is memory fragmentation. Memory fragmentation happens when the memory is split into small unused blocks throughout a memory chunk, making larger allocations harder because there is fewer contiguous memory available to allocate.</p>
+<img src="/images/memory_fragmentation.svg" />
+<p>Since memory is allocated in chunks, sometimes the real size allocated by the allocator is bigger than the requested size, and the unused memory left is wasted. This is called <strong>internal fragmentation</strong><sup class="footnote-reference"><a href="#2">2</a></sup>. <strong>External fragmentation</strong> "arises when free memory is separated into small blocks and is interspersed by allocated memory"<sup class="footnote-reference"><a href="#3">3</a></sup>.</p>
+<p>There are a lot of methods an allocator can use to minimize memory fragmentation. General purpose ones do it by creating different allocation buckets based on the allocation size. So if an allocation of 512 bytes is requested, the allocator will use a bucket for small allocations, preventing that 512 bytes are wasted in the memory when big allocations happen.</p>
+<h2 id="buddy-system">Buddy system</h2>
+<p>There are various allocation techniques, and one of the simplest and most reliable is the buddy allocation, which is the one I implemented. It is widely used in the industry, and it is the one used by the Linux kernel to handle page allocations (<em>albeit a modified version</em>).</p>
+<p>The way it works is by dividing a contiguous memory chunk into two smaller chunks of memory, each a power of two (<em>hence the "buddy"</em>), until a small enough size is reached, and then returning this memory to the user.</p>
+<h3 id="allocation">Allocation</h3>
+<p>As an example, suppose the programmer requested a 16KB memory chunk, and the size of the whole memory block is 256KB. It will do:</p>
+<ol>
+<li>Requested size is smaller than the chunk size, it will split the 256KB chunk into two 128KB chunk.</li>
+<li>Requested size is smaller than the current chunk size, first 128KB chunk is split in two 64KB chunk.</li>
+<li>Requested size is smaller than the current chunk size, first 64KB chunk is split in two 32KB chunks.</li>
+<li>Requested size is smaller than the current chunk size, first 32KB chunk is split in two 16KB chunks.</li>
+<li>Requested size is equals the chunk size. Return it to the user.</li>
+</ol>
+<p>Here is the representation of this allocation:
+<img src="/images/buddy_allocator_internal.svg" /></p>
+<p>And that is it, just split the memory until the requested size is <code>&lt;=</code> than the current chunk size. The disadvantage of this technique is that it has internal fragmentation since the returned chunk can be smaller than the requested size and so the unused memory is wasted.</p>
+<h3 id="deallocation">Deallocation</h3>
+<p>To deallocate the memory is straightforward, just mark the chunk received by the <code>free</code> function as unused and check if its buddy is also unused, if it is, just coalesce it into a bigger chunk.</p>
+<p>Suppose the previous 16KB memory chunk allocated is being freed, it would be like this<sup class="footnote-reference"><a href="#4">4</a></sup>:
+<img src="/images/buddy_allocator_free.svg" /></p>
+<h3 id="resize">Resize</h3>
+<p>The resize part is also simple to implement, and it stays as a exercise for the reader.</p>
+<h3 id="conclusion">Conclusion</h3>
+<p>After spending some time reading and implementing an allocator, I was surprised by how simple an allocator is. Even general purpose allocators like <em>mimalloc</em> is only a few thousand lines of code and most of that code is (<em>probaly</em>) just dealing with multithread.</p>
+<p>The code for my implementation can be found here: <a href="https://github.com/tgmatos/imalloc">tgmatos/imalloc</a></p>
+<p>I would have loved to delve more into the internals of an allocator, the techniques general purpose allocators use and everything, but I have neither the time nor the proficiency (<em>yet</em>) to write an article about it. I will probably do it in the future, but for now my plan is to just implement a way for mimalloc to use preallocated memory.</p>
+<div class="footnote-definition" id="1"><sup class="footnote-definition-label">1</sup>
+<p>Definition taken from <a href="https://sumofbytes.com/blog/whats-a-memory-allocator-anyway">What’s a Memory Allocator anyway ?</a></p>
+</div>
+<div class="footnote-definition" id="2"><sup class="footnote-definition-label">2</sup>
+<p><a href="https://en.wikipedia.org/w/index.php?title=Fragmentation_(computing)&amp;useskin=vector#Internal_fragmentation">Internal Memory Fragmentation (wikipedia)</a></p>
+</div>
+<div class="footnote-definition" id="3"><sup class="footnote-definition-label">3</sup>
+<p><a href="https://en.wikipedia.org/w/index.php?title=Fragmentation_(computing)&amp;useskin=vector#External_fragmentation">External Memory Fragmentation (wikipedia)</a></p>
+</div>
+<div class="footnote-definition" id="4"><sup class="footnote-definition-label">4</sup>
+<p>Since the only used chunk was a 16KB chunk, the <code>free</code> function would coalesce all the blocks until only a contigous 256KB chunk was available.</p>
+</div>
+
+
+            </main>
+            <footer>
+                
+<p class="taxonomies">
+
+</p>
+
+                
+            </footer>
+        </div>
+        <script>
+          document.addEventListener('DOMContentLoaded', () => {
+              const toggleButton = document.getElementById('theme-toggle');
+              const currentTheme = localStorage.getItem('theme') || 'light';
+              document.documentElement.setAttribute('data-theme', currentTheme); // Set on html
+              toggleButton.addEventListener('click', () => {
+                  const currentTheme = document.documentElement.getAttribute('data-theme'); // Get from html
+                  const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+                  document.documentElement.setAttribute('data-theme', newTheme); // Set on html
+                  localStorage.setItem('theme', newTheme);
+              });
+          });
+        </script>
+    </body>
+</html>
+        

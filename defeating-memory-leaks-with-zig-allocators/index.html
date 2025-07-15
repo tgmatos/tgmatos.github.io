@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta content="IE=edge" http-equiv="X-UA-Compatible"/>
+        <meta content="text/html; charset=UTF-8" http-equiv="content-type"/>
+        <meta content="width=device-width, initial-scale=1" name="viewport"/>
+
+        
+        
+        
+
+        
+
+        
+
+        
+        
+        
+
+        
+        
+        
+
+        <title>Defeating Memory Leaks With Zig Allocators</title>
+        
+        <meta name="title" content="Defeating Memory Leaks With Zig Allocators">
+        
+        
+        <meta name="generator" content="Zola v0.16.1">
+
+        <meta property="og:type" content="website">
+        <meta property="og:url" content="https://tgmatos.github.io/defeating-memory-leaks-with-zig-allocators/">
+        <meta property="og:site_name" content="">
+        <meta property="og:title" content="Defeating Memory Leaks With Zig Allocators">
+        
+        <meta property="og:image" content="https:&#x2F;&#x2F;tgmatos.github.io&#x2F;static&#x2F;images&#x2F;zig_memory_leak.png">
+
+        
+        
+        <meta property="twitter:card" content="summary_large_image">
+        <meta property="twitter:url" content="https://tgmatos.github.io/defeating-memory-leaks-with-zig-allocators/">
+        <meta property="twitter:title" content="Defeating Memory Leaks With Zig Allocators">
+        
+        <meta property="twitter:image" content="https:&#x2F;&#x2F;tgmatos.github.io&#x2F;static&#x2F;images&#x2F;zig_memory_leak.png">
+        
+        
+        <link rel="canonical" href="https://tgmatos.github.io/defeating-memory-leaks-with-zig-allocators/">
+        <script type="application/ld+json">
+            {
+                
+                "url":"https://tgmatos.github.io/defeating-memory-leaks-with-zig-allocators/",
+                "@type":"WebSite",
+                "headline":"Defeating Memory Leaks With Zig Allocators",
+                "name":"Defeating Memory Leaks With Zig Allocators",
+                
+                "@context":"https://schema.org"
+            }
+        </script>
+        
+        
+        
+        <link rel="stylesheet" href="https://tgmatos.github.io/style.css"/>
+        
+    </head>
+    <body theme="auto">
+        <div class="w">
+            <header>
+                
+                <nav>
+                    
+                    <a href="https://github.com/tgmatos" >Github</a>
+                    
+                    <a href="/" >~home</a>
+                    
+                    <a href="https://www.linkedin.com/in/tiago-matos-314204289/" >Linkedin</a>
+                    
+                </nav>
+                
+                
+<p><a href="..">..</a>/defeating-memory-leaks-with-zig-allocators</p>
+<p class="post-meta"><time datetime="2025-07-15">2025-07-15</time></p>
+<h1>Defeating Memory Leaks With Zig Allocators</h1>
+
+                <div id="theme-toggle" class="theme-toggle">
+                  <span class="slider">
+                    <span class="emoji sun">☀️</span>
+                    <span class="emoji moon">🌙</span>
+                  </span>
+                </div>
+            </header>
+            <main class="page-content" aria-label="Content">
+                
+
+
+
+
+<img src="https:&#x2F;&#x2F;tgmatos.github.io&#x2F;processed_images&#x2F;zig_memory_leak.cbe416b9349c02ba.png" />
+<h1 id="table-of-contents">Table of Contents</h1>
+<ol>
+<li><a href="https://tgmatos.github.io/defeating-memory-leaks-with-zig-allocators/#introduction">Introduction</a></li>
+<li><a href="https://tgmatos.github.io/defeating-memory-leaks-with-zig-allocators/#zig-allocators">Zig Allocators</a></li>
+<li><a href="https://tgmatos.github.io/defeating-memory-leaks-with-zig-allocators/#debug-allocator">Debug Allocator</a></li>
+<li><a href="https://tgmatos.github.io/defeating-memory-leaks-with-zig-allocators/#detecting-memory-leaks">Detecting Memory Leaks</a></li>
+</ol>
+<h2 id="introduction">Introduction</h2>
+<p>I started reading the book <a href="https://craftinginterpreters.com/">Crafting Interpreters</a> to learn about the process of developing and implementing a programming language (<em>I have some criticism about the way the book presents formal concepts</em>). The book is divided in two parts. The first one is an interpreter for the Lox programming language, which has a syntax similar to JavaScript and is implemented in Java. The second part is the virtual machine and it is written in C. Instead of using Java for the interpreter, I decided to use <a href="https://ziglang.org/">zig</a>. <!-- The book starts showing how to write the lexer, then how to build the AST and how to evaluate it. --></p>
+<p>Zig is a systems programming language that occupies the same niche as C, Rust, C++ and others, but unlike newer programming languages in this space which tries to be memory safe — such as Rust — Zig does not try to be memory safe but instead it offers enchancements for manual memory management, like optionals for nullable values, <code>defer</code> and other features. In this post I will focus on the allocators offered by Zig's standard library.</p>
+<h2 id="zig-allocators">Zig Allocators</h2>
+<p>Contrary to C in which the standard library provides only a single allocator — and developers must rely on external libraries to use alternatives like arena allocators —, Zig goes in the other direction and tries to provide a variety of allocators in the stdlib, and make it easy to switch between then with minimal code change. As an example, this is how a programmer would use an arena allocator in Zig:</p>
+<pre data-lang="zig" style="background-color:#2b303b;color:#c0c5ce;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#65737e;">// Code taken from Zig documentation
+</span><span style="color:#b48ead;">const</span><span> std = </span><span style="color:#b48ead;">@import</span><span>(</span><span style="color:#a3be8c;">&quot;std&quot;</span><span>);
+</span><span>
+</span><span style="color:#b48ead;">pub fn </span><span style="color:#8fa1b3;">main</span><span>() !</span><span style="color:#b48ead;">void </span><span>{
+</span><span>    </span><span style="color:#b48ead;">var</span><span> arena = std.heap.ArenaAllocator.</span><span style="color:#bf616a;">init</span><span>(std.heap.page_allocator);
+</span><span>    </span><span style="color:#b48ead;">defer</span><span> arena.</span><span style="color:#bf616a;">deinit</span><span>();
+</span><span>
+</span><span>    </span><span style="color:#b48ead;">const</span><span> allocator = arena.</span><span style="color:#bf616a;">allocator</span><span>();
+</span><span>
+</span><span>    </span><span style="color:#b48ead;">const</span><span> ptr = </span><span style="color:#b48ead;">try</span><span> allocator.</span><span style="color:#bf616a;">create</span><span>(i32);
+</span><span>    std.debug.</span><span style="color:#bf616a;">print</span><span>(</span><span style="color:#a3be8c;">&quot;ptr={*}</span><span style="color:#96b5b4;">\n</span><span style="color:#a3be8c;">&quot;</span><span>, .{ptr});
+</span><span>}
+</span></code></pre>
+<p>As the code above shows, the <code>std.heap.ArenaAllocator</code> receives a child allocator and wraps it to provide an interface that allows allocations without individual deallocations, instead freeing all memory at once. If a programmer was to change from this allocator to another, it would do something like this:</p>
+<pre data-lang="zig" style="background-color:#2b303b;color:#c0c5ce;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#b48ead;">const</span><span> std = </span><span style="color:#b48ead;">@import</span><span>(</span><span style="color:#a3be8c;">&quot;std&quot;</span><span>);
+</span><span>
+</span><span style="color:#b48ead;">pub fn </span><span style="color:#8fa1b3;">main</span><span>() !</span><span style="color:#b48ead;">void </span><span>{
+</span><span>    </span><span style="color:#b48ead;">var</span><span> gpa = std.heap.</span><span style="color:#bf616a;">GeneralPurposeAllocator</span><span>(.{}){};
+</span><span>    </span><span style="color:#b48ead;">defer </span><span style="color:#d08770;">_ </span><span>= gpa.</span><span style="color:#bf616a;">deinit</span><span>();
+</span><span>
+</span><span>    </span><span style="color:#b48ead;">const</span><span> allocator = gpa.</span><span style="color:#bf616a;">allocator</span><span>();
+</span><span>
+</span><span>    </span><span style="color:#b48ead;">const</span><span> ptr = </span><span style="color:#b48ead;">try</span><span> allocator.</span><span style="color:#bf616a;">create</span><span>(i32);
+</span><span>    std.debug.</span><span style="color:#bf616a;">print</span><span>(</span><span style="color:#a3be8c;">&quot;ptr={*}</span><span style="color:#96b5b4;">\n</span><span style="color:#a3be8c;">&quot;</span><span>, .{ptr});
+</span><span>}
+</span></code></pre>
+<p>A common practice in Zig code is passing the allocator as a function parameter:</p>
+<pre data-lang="zig" style="background-color:#2b303b;color:#c0c5ce;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#b48ead;">const</span><span> std = </span><span style="color:#b48ead;">@import</span><span>(</span><span style="color:#a3be8c;">&quot;std&quot;</span><span>);
+</span><span>
+</span><span style="color:#b48ead;">pub fn </span><span style="color:#8fa1b3;">main</span><span>() !</span><span style="color:#b48ead;">void </span><span>{
+</span><span>    </span><span style="color:#b48ead;">var</span><span> gpa = std.heap.</span><span style="color:#bf616a;">GeneralPurposeAllocator</span><span>(.{}){};
+</span><span>    </span><span style="color:#b48ead;">defer </span><span style="color:#d08770;">_ </span><span>= gpa.</span><span style="color:#bf616a;">deinit</span><span>();
+</span><span>
+</span><span>    </span><span style="color:#b48ead;">const</span><span> allocator = gpa.</span><span style="color:#bf616a;">allocator</span><span>();
+</span><span>
+</span><span>    </span><span style="color:#b48ead;">const</span><span> arr = </span><span style="color:#bf616a;">createArray</span><span>(allocator, </span><span style="color:#d08770;">5</span><span>);
+</span><span>    </span><span style="color:#b48ead;">defer</span><span> allocator.</span><span style="color:#bf616a;">free</span><span>(arr);
+</span><span>    
+</span><span>    </span><span style="color:#65737e;">// Do something with &quot;arr&quot;
+</span><span>}
+</span><span>
+</span><span style="color:#b48ead;">fn </span><span style="color:#8fa1b3;">createArray</span><span>(</span><span style="color:#bf616a;">allocator</span><span>: </span><span style="color:#b48ead;">std.mem.Allocator</span><span>, </span><span style="color:#bf616a;">size</span><span>: </span><span style="color:#b48ead;">usize</span><span>) ![]</span><span style="color:#b48ead;">i32 </span><span>{
+</span><span>    </span><span style="color:#b48ead;">return</span><span> allocator.</span><span style="color:#bf616a;">alloc</span><span>(i32, size) </span><span style="color:#b48ead;">catch </span><span>|err| {
+</span><span>        </span><span style="color:#b48ead;">return</span><span> err;
+</span><span>    };
+</span><span>}
+</span></code></pre>
+<p>In the code above, the <code>createArray</code> function takes an <code>allocator: std.mem.Allocator</code> parameter. This type is an interface (<em>yes, Zig does have interfaces<sup class="footnote-reference"><a href="#1">1</a></sup></em>) that allocators must implement. Using this pattern, developers can easily switch out allocators, changing memory allocation behavior with minimal refactoring.</p>
+<h2 id="debug-allocator">Debug Allocator</h2>
+<p>One of the allocators provided by Zig's stdlib is <code>std.heap.debug_allocator</code>. This allocator provides many features to help detect bugs, and I leveraged these features to detect and remove memory leaks from my interpreter. This is the list of the features provided by the allocator<sup class="footnote-reference"><a href="#2">2</a></sup>:</p>
+<ul>
+<li>Captures stack traces on allocation, free, and optionally resize.</li>
+<li>Double free detection, which prints all three traces (first alloc, first free, second free).</li>
+<li>Leak detection, with stack traces.</li>
+<li>Never reuses memory addresses, making it easier for Zig to detect branch on undefined values in case of dangling pointers. This relies on the backing allocator to also not reuse addresses.</li>
+<li>Uses a minimum backing allocation size to avoid operating system errors from having too many active memory mappings.</li>
+<li>When a page of memory is no longer needed, give it back to resident memory as soon as possible, so that it causes page faults when used.</li>
+<li>Cross platform. Operates based on a backing allocator which makes it work everywhere, even freestanding.</li>
+<li>Compile-time configuration.</li>
+</ul>
+<p>The features relevant to this post are the <strong>double free and memory leak detection</strong>, which help developers catch memory issues without using external tools like <code>valgrind</code>.</p>
+<h2 id="detecting-memory-leaks">Detecting Memory Leaks</h2>
+<p>To understand the memory leak I was trying to solve, I must explain first what I was attemptin. In my interpreter, the <code>parser.zig</code> file generates the AST (<em>abstract syntax tree</em>) based on the tokens produced by the lexer. The AST (<em>at the time</em>) produces an expression and then returns it.</p>
+<p>I won't enter in details, but an <code>expression</code> is represented as recursivily tagged union, which contains other structs and tagged unions. This is the code which represents the expression:</p>
+<pre data-lang="zig" style="background-color:#2b303b;color:#c0c5ce;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#b48ead;">pub const </span><span>Expr = </span><span style="color:#b48ead;">union</span><span>(</span><span style="color:#b48ead;">enum</span><span>) {
+</span><span>    </span><span style="color:#b48ead;">const</span><span> Self = </span><span style="color:#96b5b4;">@This</span><span>();
+</span><span>    </span><span style="color:#bf616a;">literal</span><span>: *</span><span style="color:#b48ead;">Literal</span><span>,
+</span><span>    </span><span style="color:#bf616a;">unary</span><span>: *</span><span style="color:#b48ead;">Unary</span><span>,
+</span><span>    </span><span style="color:#bf616a;">binary</span><span>: *</span><span style="color:#b48ead;">Binary</span><span>,
+</span><span>    </span><span style="color:#bf616a;">grouping</span><span>: *</span><span style="color:#b48ead;">Grouping</span><span>,
+</span><span>}
+</span><span>
+</span><span style="color:#b48ead;">pub const </span><span>Literal = </span><span style="color:#b48ead;">union</span><span>(</span><span style="color:#b48ead;">enum</span><span>) {
+</span><span>    </span><span style="color:#bf616a;">number</span><span>: </span><span style="color:#b48ead;">f64</span><span>,
+</span><span>    </span><span style="color:#bf616a;">string</span><span>: []</span><span style="color:#b48ead;">u8</span><span>,
+</span><span>    </span><span style="color:#bf616a;">boolean</span><span>: </span><span style="color:#b48ead;">bool</span><span>,
+</span><span>    </span><span style="color:#bf616a;">nil</span><span>: </span><span style="color:#b48ead;">void</span><span>,
+</span><span>}
+</span><span>
+</span><span style="color:#b48ead;">pub const </span><span>Grouping = </span><span style="color:#b48ead;">struct </span><span>{
+</span><span>    </span><span style="color:#bf616a;">expr</span><span>: *</span><span style="color:#b48ead;">Expr</span><span>,
+</span><span>}
+</span><span>
+</span><span style="color:#b48ead;">pub const </span><span>Unary = </span><span style="color:#b48ead;">struct </span><span>{
+</span><span>    </span><span style="color:#bf616a;">operator</span><span>: </span><span style="color:#b48ead;">Token</span><span>,
+</span><span>    </span><span style="color:#bf616a;">right</span><span>: *</span><span style="color:#b48ead;">Expr</span><span>,
+</span><span>}
+</span><span>
+</span><span style="color:#b48ead;">pub const </span><span>Binary = </span><span style="color:#b48ead;">struct </span><span>{
+</span><span>    </span><span style="color:#bf616a;">exprLeft</span><span>: *</span><span style="color:#b48ead;">Expr</span><span>,
+</span><span>    </span><span style="color:#bf616a;">operator</span><span>: </span><span style="color:#b48ead;">Token</span><span>,
+</span><span>    </span><span style="color:#bf616a;">exprRight</span><span>: *</span><span style="color:#b48ead;">Expr</span><span>,
+</span><span>}
+</span></code></pre>
+<p>The relevant part here is the <code>Binary</code> expression, which receives an expression both on the left and right side. For example, the expression <code>10 - 8 + 2</code> is a binary expression, in which the left side expression is <code>10 - 8</code> and the right side expression is <code>+ 2</code>. This would be the internal representation of this expression:</p>
+<pre data-lang="zig" style="background-color:#2b303b;color:#c0c5ce;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#b48ead;">Expr</span><span>{
+</span><span>    .binary = .{
+</span><span>        .exprLeft = </span><span style="color:#b48ead;">Expr</span><span>{
+</span><span>            .binary = .{
+</span><span>                .exprLeft = </span><span style="color:#b48ead;">Expr</span><span>{
+</span><span>                    .literal = &amp;</span><span style="color:#b48ead;">Literal</span><span>{ .number = </span><span style="color:#d08770;">10.0 </span><span>},
+</span><span>                },
+</span><span>                .operator = Token.Minus,
+</span><span>                .exprRight = </span><span style="color:#b48ead;">Expr</span><span>{
+</span><span>                    .literal = &amp;</span><span style="color:#b48ead;">Literal</span><span>{ .number = </span><span style="color:#d08770;">8.0 </span><span>},
+</span><span>                },
+</span><span>            },
+</span><span>        },
+</span><span>        .operator = Token.Plus,
+</span><span>        .exprRight = </span><span style="color:#b48ead;">Expr</span><span>{
+</span><span>            .literal = &amp;</span><span style="color:#b48ead;">Literal</span><span>{ .number = </span><span style="color:#d08770;">2.0 </span><span>},
+</span><span>        },
+</span><span>    },
+</span><span>}
+</span></code></pre>
+<p>To evaluate such expression, I created this function that receives an <code>Expr</code> and a <code>std.mem.Allocator</code> and dispatchs based on the active tag:</p>
+<pre data-lang="zig" style="background-color:#2b303b;color:#c0c5ce;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#b48ead;">pub fn </span><span style="color:#8fa1b3;">evaluate</span><span>(</span><span style="color:#bf616a;">expr</span><span>: *</span><span style="color:#b48ead;">Self</span><span>, </span><span style="color:#bf616a;">allocator</span><span>: </span><span style="color:#b48ead;">std.mem.Allocator</span><span>) </span><span style="color:#b48ead;">RuntimeError</span><span>!*</span><span style="color:#b48ead;">Expr </span><span>{
+</span><span>    </span><span style="color:#b48ead;">switch </span><span>(expr.*) {
+</span><span style="color:#d08770;">        .literal </span><span>=&gt; </span><span style="color:#b48ead;">return</span><span> expr,
+</span><span style="color:#d08770;">        .grouping </span><span>=&gt; </span><span style="color:#b48ead;">return try</span><span> Grouping.</span><span style="color:#bf616a;">evaluate</span><span>(expr.grouping.*, allocator),
+</span><span style="color:#d08770;">        .unary </span><span>=&gt; </span><span style="color:#b48ead;">return try</span><span> Unary.</span><span style="color:#bf616a;">evaluate</span><span>(expr.unary.*, allocator),
+</span><span style="color:#d08770;">        .binary </span><span>=&gt; </span><span style="color:#b48ead;">return try</span><span> Binary.</span><span style="color:#bf616a;">evaluate</span><span>(expr.binary.*, allocator),
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>In this example, calling <code>evaluate</code> on the full expression causes recursive calls to <code>Binary.evaluate</code>, each of which evaluates its sub-expression and returns a result:</p>
+<pre data-lang="zig" style="background-color:#2b303b;color:#c0c5ce;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#b48ead;">pub fn </span><span style="color:#8fa1b3;">evaluate</span><span>(</span><span style="color:#bf616a;">binary</span><span>: </span><span style="color:#b48ead;">Binary</span><span>, </span><span style="color:#bf616a;">allocator</span><span>: </span><span style="color:#b48ead;">std.mem.Allocator</span><span>) </span><span style="color:#b48ead;">RuntimeError</span><span>!*</span><span style="color:#b48ead;">Expr </span><span>{
+</span><span>    </span><span style="color:#b48ead;">const</span><span> left = </span><span style="color:#b48ead;">try</span><span> binary.exprLeft.</span><span style="color:#bf616a;">evaluate</span><span>(allocator);
+</span><span>    </span><span style="color:#b48ead;">const</span><span> right = </span><span style="color:#b48ead;">try</span><span> binary.exprRight.</span><span style="color:#bf616a;">evaluate</span><span>(allocator);
+</span><span>
+</span><span>    </span><span style="color:#b48ead;">const</span><span> expr = </span><span style="color:#b48ead;">try</span><span> allocator.</span><span style="color:#bf616a;">create</span><span>(Expr);
+</span><span>    </span><span style="color:#b48ead;">errdefer</span><span> allocator.</span><span style="color:#bf616a;">destroy</span><span>(expr);
+</span><span>
+</span><span>    </span><span style="color:#b48ead;">const</span><span> literal = </span><span style="color:#b48ead;">try</span><span> allocator.</span><span style="color:#bf616a;">create</span><span>(Literal);
+</span><span>    </span><span style="color:#b48ead;">errdefer</span><span> allocator.</span><span style="color:#bf616a;">destroy</span><span>(literal);
+</span><span>
+</span><span>    </span><span style="color:#b48ead;">return switch </span><span>(binary.operator.kind) {
+</span><span style="color:#d08770;">        .MINUS </span><span>=&gt; {
+</span><span>            </span><span style="color:#b48ead;">if </span><span>(!</span><span style="color:#bf616a;">checkOperand</span><span>(left.*, right.*)) {
+</span><span>                </span><span style="color:#b48ead;">return</span><span> RuntimeError.InvalidOperand;
+</span><span>            }
+</span><span>                literal.* = </span><span style="color:#b48ead;">Literal</span><span>{ .number = left.literal.number - right.literal.number };
+</span><span>            expr.* = .{ .literal = literal };
+</span><span>            </span><span style="color:#b48ead;">return</span><span> expr;
+</span><span>        }
+</span><span>        </span><span style="color:#65737e;">// rest of the code
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>However, although the code seemed correct, the debug allocator reported memory leaks during executions:</p>
+<pre data-lang="shell" style="background-color:#2b303b;color:#c0c5ce;" class="language-shell "><code class="language-shell" data-lang="shell"><span>$ zig build run
+</span><span>&gt; 10 - 8 + 3;
+</span><span>5
+</span><span>&gt; error(gpa): memory address 0x7f216d9e0060 leaked: 
+</span><span>LoxInterpreter/src/expression.zig:177:42: 0x117b7e2 in evaluate (main.zig)
+</span><span>        const expr = try allocator.create(Expr);
+</span><span>                                         ^
+</span><span>LoxInterpreter/src/expression.zig:24:50: 0x116e6d2 in evaluate (main.zig)
+</span><span>            .binary =&gt; return try Binary.evaluate(expr.binary.*, allocator),
+</span><span>                                                 ^
+</span><span>LoxInterpreter/src/expression.zig:174:50: 0x117b6bc in evaluate (main.zig)
+</span><span>        const left = try binary.exprLeft.evaluate(allocator);
+</span><span>                                                 ^
+</span><span>LoxInterpreter/src/expression.zig:24:50: 0x116e6d2 in evaluate (main.zig)
+</span><span>            .binary =&gt; return try Binary.evaluate(expr.binary.*, allocator),
+</span><span>                                                 ^
+</span><span>LoxInterpreter/src/statement.zig:16:58: 0x1167e39 in evaluate (main.zig)
+</span><span>                const expr = try self.expression.evaluate(allocator);
+</span><span>                                                         ^
+</span><span>LoxInterpreter/src/main.zig:60:26: 0x1168cd1 in runPrompt (main.zig)
+</span><span>            stmt.evaluate(allocator) catch |err| {
+</span><span>                         ^
+</span><span>
+</span><span>error(gpa): memory address 0x7f216da00060 leaked: 
+</span><span>LoxInterpreter/src/expression.zig:180:45: 0x117b88e in evaluate (main.zig)
+</span><span>        const literal = try allocator.create(Literal);
+</span><span>                                            ^
+</span><span>LoxInterpreter/src/expression.zig:24:50: 0x116e6d2 in evaluate (main.zig)
+</span><span>            .binary =&gt; return try Binary.evaluate(expr.binary.*, allocator),
+</span><span>                                                 ^
+</span><span>LoxInterpreter/src/expression.zig:174:50: 0x117b6bc in evaluate (main.zig)
+</span><span>        const left = try binary.exprLeft.evaluate(allocator);
+</span><span>                                                 ^
+</span><span>LoxInterpreter/src/expression.zig:24:50: 0x116e6d2 in evaluate (main.zig)
+</span><span>            .binary =&gt; return try Binary.evaluate(expr.binary.*, allocator),
+</span><span>                                                 ^
+</span><span>LoxInterpreter/src/statement.zig:16:58: 0x1167e39 in evaluate (main.zig)
+</span><span>                const expr = try self.expression.evaluate(allocator);
+</span><span>                                                         ^
+</span><span>LoxInterpreter/src/main.zig:60:26: 0x1168cd1 in runPrompt (main.zig)
+</span><span>            stmt.evaluate(allocator) catch |err| {
+</span></code></pre>
+<p>The problem in this code lies in not freeing memory after evaluating an "intermediary" expression. For instance, the result of evaluating <code>10 - 8</code> (<em>which returns the literal <code>2</code></em>) would not be freed after returning the result of the expression <code>2 + 3</code>. This was an annoying memory leak, which I only discovered thanks to Zig's <code>std.heap.debug_allocator</code>.</p>
+<p>After identifying the leak, I tried to simply free the memory allocated in <code>left</code> and <code>right</code>, but doing so caused double free - which Zig's debug allocator warned me about - because when evaluating literals I would return a pointer to it. Eventually I fixed the memory leak by copying the literals and returning the copy and then freeing the intermediary expression afterward. This ensured that only the final result was reteined and returned, while everything else was properly deallocated.</p>
+<pre data-lang="zig" style="background-color:#2b303b;color:#c0c5ce;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#b48ead;">pub fn </span><span style="color:#8fa1b3;">evaluate</span><span>(</span><span style="color:#bf616a;">expr</span><span>: *</span><span style="color:#b48ead;">Self</span><span>, </span><span style="color:#bf616a;">allocator</span><span>: </span><span style="color:#b48ead;">std.mem.Allocator</span><span>) </span><span style="color:#b48ead;">RuntimeError</span><span>!*</span><span style="color:#b48ead;">Expr </span><span>{
+</span><span>    </span><span style="color:#b48ead;">switch </span><span>(expr.*) {
+</span><span style="color:#d08770;">        .literal </span><span>=&gt; {
+</span><span>            </span><span style="color:#b48ead;">const </span><span style="color:#bf616a;">literal</span><span>: *</span><span style="color:#b48ead;">Literal </span><span>= </span><span style="color:#b48ead;">try</span><span> allocator.</span><span style="color:#bf616a;">create</span><span>(Literal);
+</span><span>            </span><span style="color:#65737e;">// Since the string is stored in heap instead of the stack,
+</span><span>            </span><span style="color:#65737e;">// I must check if the literal is a string and then copy it.
+</span><span>            </span><span style="color:#b48ead;">if </span><span>(</span><span style="color:#bf616a;">activeTag</span><span>(expr.literal.*) == Literal.string) {
+</span><span>                </span><span style="color:#b48ead;">const</span><span> str = </span><span style="color:#b48ead;">try</span><span> allocator.</span><span style="color:#bf616a;">alloc</span><span>(u8, expr.literal.string.len);
+</span><span>                </span><span style="color:#96b5b4;">@memcpy</span><span>(str, expr.literal.string);
+</span><span>                literal.* = expr.literal.*;
+</span><span>                literal.*.string = str;
+</span><span>            } </span><span style="color:#b48ead;">else </span><span>{
+</span><span>                literal.* = expr.literal.*;
+</span><span>            }
+</span><span>            </span><span style="color:#b48ead;">const </span><span style="color:#bf616a;">cpyExpr</span><span>: *</span><span style="color:#b48ead;">Expr </span><span>= </span><span style="color:#b48ead;">try</span><span> allocator.</span><span style="color:#bf616a;">create</span><span>(Expr);
+</span><span>            cpyExpr.* = .{ .literal = literal };
+</span><span>            </span><span style="color:#b48ead;">return</span><span> cpyExpr;
+</span><span>        },
+</span><span style="color:#d08770;">        .grouping </span><span>=&gt; </span><span style="color:#b48ead;">return try</span><span> Grouping.</span><span style="color:#bf616a;">evaluate</span><span>(expr.grouping.*, allocator),
+</span><span style="color:#d08770;">        .unary </span><span>=&gt; </span><span style="color:#b48ead;">return try</span><span> Unary.</span><span style="color:#bf616a;">evaluate</span><span>(expr.unary.*, allocator),
+</span><span style="color:#d08770;">        .binary </span><span>=&gt; </span><span style="color:#b48ead;">return try</span><span> Binary.</span><span style="color:#bf616a;">evaluate</span><span>(expr.binary.*, allocator),
+</span><span>    }
+</span><span>}
+</span><span>
+</span><span style="color:#b48ead;">pub fn </span><span style="color:#8fa1b3;">evaluate</span><span>(</span><span style="color:#bf616a;">binary</span><span>: </span><span style="color:#b48ead;">Binary</span><span>, </span><span style="color:#bf616a;">allocator</span><span>: </span><span style="color:#b48ead;">std.mem.Allocator</span><span>) </span><span style="color:#b48ead;">RuntimeError</span><span>!*</span><span style="color:#b48ead;">Expr </span><span>{
+</span><span>    </span><span style="color:#b48ead;">const</span><span> left = </span><span style="color:#b48ead;">try</span><span> binary.exprLeft.</span><span style="color:#bf616a;">evaluate</span><span>(allocator);
+</span><span>    </span><span style="color:#b48ead;">defer</span><span> left.</span><span style="color:#bf616a;">deinit</span><span>(allocator;) </span><span style="color:#65737e;">// Cleanup left expression
+</span><span>    
+</span><span>    </span><span style="color:#b48ead;">const</span><span> right = </span><span style="color:#b48ead;">try</span><span> binary.exprRight.</span><span style="color:#bf616a;">evaluate</span><span>(allocator);
+</span><span>    </span><span style="color:#b48ead;">defer</span><span> right.</span><span style="color:#bf616a;">deinit</span><span>(allocator); </span><span style="color:#65737e;">// Cleanup right expression
+</span><span>
+</span><span>    </span><span style="color:#b48ead;">const</span><span> expr = </span><span style="color:#b48ead;">try</span><span> allocator.</span><span style="color:#bf616a;">create</span><span>(Expr);
+</span><span>    </span><span style="color:#b48ead;">errdefer</span><span> allocator.</span><span style="color:#bf616a;">destroy</span><span>(expr);
+</span><span>
+</span><span>    </span><span style="color:#b48ead;">const</span><span> literal = </span><span style="color:#b48ead;">try</span><span> allocator.</span><span style="color:#bf616a;">create</span><span>(Literal);
+</span><span>    </span><span style="color:#b48ead;">errdefer</span><span> allocator.</span><span style="color:#bf616a;">destroy</span><span>(literal);
+</span><span>
+</span><span>    </span><span style="color:#b48ead;">return switch </span><span>(binary.operator.kind) {
+</span><span style="color:#d08770;">        .MINUS </span><span>=&gt; {
+</span><span>            </span><span style="color:#b48ead;">if </span><span>(!</span><span style="color:#bf616a;">checkOperand</span><span>(left.*, right.*)) {
+</span><span>                </span><span style="color:#b48ead;">return</span><span> RuntimeError.InvalidOperand;
+</span><span>            }
+</span><span>                literal.* = </span><span style="color:#b48ead;">Literal</span><span>{ .number = left.literal.number - right.literal.number };
+</span><span>            expr.* = .{ .literal = literal };
+</span><span>            </span><span style="color:#b48ead;">return</span><span> expr;
+</span><span>        }
+</span><span>        </span><span style="color:#65737e;">// rest of the code
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>With these changes I was able to fix all the memory leaks and double free in my code.
+If you are interested in reading the code, this is the repository: <a href="https://github.com/tgmatos/loxinterpreter">tgmatos/loxinterpreter</a></p>
+<div class="footnote-definition" id="1"><sup class="footnote-definition-label">1</sup>
+<p><a href="https://www.openmymind.net/Zig-Interfaces/">Zig Interfaces</a></p>
+</div>
+<div class="footnote-definition" id="2"><sup class="footnote-definition-label">2</sup>
+<p><a href="https://ziglang.org/documentation/0.14.0/std/#std.heap.debug_allocator">std.heap.debug_allocator reference</a></p>
+</div>
+
+
+            </main>
+            <footer>
+                
+<p class="taxonomies">
+
+</p>
+
+                
+            </footer>
+        </div>
+        <script>
+          document.addEventListener('DOMContentLoaded', () => {
+              const toggleButton = document.getElementById('theme-toggle');
+              const currentTheme = localStorage.getItem('theme') || 'light';
+              document.documentElement.setAttribute('data-theme', currentTheme); // Set on html
+              toggleButton.addEventListener('click', () => {
+                  const currentTheme = document.documentElement.getAttribute('data-theme'); // Get from html
+                  const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+                  document.documentElement.setAttribute('data-theme', newTheme); // Set on html
+                  localStorage.setItem('theme', newTheme);
+              });
+          });
+        </script>
+    </body>
+</html>
+        
