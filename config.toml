@@ -19,5 +19,5 @@ dark_theme = "github-dark"
 header_nav = [
     { name = "Github", url = "https://github.com/tgmatos" },
     { name = "~home", url = "/" },
-    { name = "Linkedin", url = "https://www.linkedin.com/in/tiago-matos-314204289/" },
+    { name = "Linkedin", url = "https://www.linkedin.com/in/tgmatosdev/" },
 ]
