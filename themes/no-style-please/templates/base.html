@@ -92,6 +92,10 @@
         <link rel="alternate" type="application/atom+xml" title="RSS" href="{{ get_url(path="atom.xml", trailing_slash=false) }}">
         {% endblock feed %}
         {% endif %}
+	<script>
+            const currentTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', currentTheme);
+        </script>
         {% block css %}
         <link rel="stylesheet" href="{{ get_url(path='style.css', trailing_slash=false) | safe }}"/>
         {% endblock css %}
@@ -128,15 +132,13 @@
                 {% endif %}
             </footer>
         </div>
-        <script>
+	<script>
           document.addEventListener('DOMContentLoaded', () => {
               const toggleButton = document.getElementById('theme-toggle');
-              const currentTheme = localStorage.getItem('theme') || 'light';
-              document.documentElement.setAttribute('data-theme', currentTheme); // Set on html
               toggleButton.addEventListener('click', () => {
-                  const currentTheme = document.documentElement.getAttribute('data-theme'); // Get from html
+                  const currentTheme = document.documentElement.getAttribute('data-theme');
                   const newTheme = currentTheme === 'light' ? 'dark' : 'light';
-                  document.documentElement.setAttribute('data-theme', newTheme); // Set on html
+                  document.documentElement.setAttribute('data-theme', newTheme);
                   localStorage.setItem('theme', newTheme);
               });
           });

@@ -9,7 +9,10 @@ build_search_index = false
 
 theme = "no-style-please"
 
-[markdown]
+[markdown.highlighting]
+style = "inline"
+light_theme = "github-light"
+dark_theme = "github-dark"
 
 [extra]
 # Put all your custom variables here
