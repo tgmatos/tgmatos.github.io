@@ -20,18 +20,18 @@
 // block body's background propagation
 // see: https://stackoverflow.com/a/61265706
 :root {
-    --background-color: white;
+    --background-color: #fdf6e3;
     --text-color: black;
-    --code-background: black;
-    --code-color: white;
+    --code-background: white;
+    --code-color: #24292e;
     --border-color: black;
 }
 
 [data-theme='dark'] {
-    --background-color: black;
+    --background-color: #1c1c1c;
     --text-color: white;
-    --code-background: white;
-    --code-color: black;
+    --code-background: #24292e;
+    --code-color: #e1e4e8;
     --border-color: white;
 }
 
@@ -104,6 +104,8 @@ pre code {
     white-space: pre-wrap; /* Allow text to wrap */
     word-wrap: break-word; /* Break long words if necessary */
     padding: 1rem;
+    color: inherit; /* Inherit inline syntax highlight colors */
+    background: transparent; /* Let pre's inline background show through */
 }
 
 blockquote {

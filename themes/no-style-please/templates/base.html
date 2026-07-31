@@ -92,7 +92,7 @@
         <link rel="alternate" type="application/atom+xml" title="RSS" href="{{ get_url(path="atom.xml", trailing_slash=false) }}">
         {% endblock feed %}
         {% endif %}
-	<script>
+        <script>
             const currentTheme = localStorage.getItem('theme') || 'light';
             document.documentElement.setAttribute('data-theme', currentTheme);
         </script>
